@@ -1,0 +1,7 @@
+.env*
+data*/
+Patient*/
+tmp/
+venv/
+**.DS_Store**
+**pycache**
