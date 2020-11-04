@@ -22,7 +22,8 @@ class HotWordSpotting():
       self.transcript = index_df['transcript'].to_list()
       self.ref_lists = self.load_references(index_df['path'].to_list())
     elif(folder != None):
-      self.ref_path = [os.path.join(folder, f) for f in sorted(os.listdir(folder)) if f != '.DS_Store']
+      self.ref_name = [f for f in sorted(os.listdir(folder)) if f != '.DS_Store']
+      self.ref_path = [os.path.join(folder, f) for f in self.ref_name]
       self.ref_lists = self.load_references(self.ref_path)
       print(self.ref_path)    
     else:
@@ -63,7 +64,12 @@ class HotWordSpotting():
 
   def __call__(self, x, return_dist=False):
     """
-      X : query vector [n_timesteps,]
+      parameters:
+        X : query vector [n_timesteps,]
+      returns:
+        found, : int:[] indicate of matched references
+        dists,    : folat:[1, .., len(ref)] distance for each of the reference
+        self.ref_name :folat: [1, .., len(ref)] name of reference files
     """
     x = librosa.feature.mfcc(x, self.sf,  n_mfcc=self.n_feats, n_fft=self.n_fft)
     if(self.no_mfcc0):
@@ -78,10 +84,10 @@ class HotWordSpotting():
       if(e): found.append(i+1)
 
     if(return_dist):
-      return found, dists
+      return found, dists, self.ref_name
     else:
       return found
-
+      
 
 if __name__ == '__main__':
   # for n_feats in [1, 2, 3, 4, 5, 13, 15, 20]:

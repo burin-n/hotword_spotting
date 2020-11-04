@@ -32,7 +32,7 @@ class RecordAudio():
                     rate=self.fs,
                     frames_per_buffer=self.chunk,
                     input=True,
-                    input_device_index=0)
+                    )
     
     
     index_start = 0
@@ -59,6 +59,7 @@ class RecordAudio():
         'index_start_5sec' : index_start_5sec,
         'index_start' : index_start,
         'index_end' : index_end,
+        'sampling_rate' : self.fs
       }
       output_q.put(packet)
       return
@@ -75,6 +76,7 @@ class RecordAudio():
         'index_start_5sec' : index_start_5sec,
         'index_start' : index_start,
         'index_end' : index_end,
+        'sampling_rate' : self.fs
       }
       output_q.put(packet)
 

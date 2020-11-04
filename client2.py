@@ -3,20 +3,20 @@ import time
 import random
 from src.HotWordSpotting import HotWordSpotting
 from src.RecordAudio2 import RecordAudio
-from src.ConnectStorage import download_references
+from src.Storage import Storage
 import librosa
 from datetime import datetime
 import json
 import pika
 import pickle
 import sys
-
+import signal
 
 def consume(record_buffer, start, end):
   if(start < 0 or end < start):
-    print('!', start, end)
+    # print('!', start, end)
     data = record_buffer[start:] + record_buffer[:end]  
-    print(len(data))
+    # print(len(data))
   else:
     data = record_buffer[start:end]
 
@@ -30,12 +30,13 @@ def worker_handler(task_q, record_buffer, result_q, work):
       print(task)
       # consume data from circular list
       data = consume(record_buffer, task['index_start'], task['index_end'])
-      result, dists = work(data, return_dist=True)
+      result, dists, ref_name = work(data, return_dist=True)
       result_packet = task.copy()
       result_packet['time_end_dtw'] = datetime.now().__str__()
       result_packet['results'] = result
       result_packet['dists'] = dists.tolist()
       result_packet['data'] = consume(record_buffer, task['index_start_5sec'], task['index_end']).tolist()
+      result_packet['ref_name'] = ref_name
       result_q.put(result_packet)
 
 
@@ -44,16 +45,16 @@ def task_gen_handler(task_q, record_buffer, sf):
   recorder(task_q, record_buffer)
 
 
-def singal_gen_handler(result_q, user_id, sf, server_config):
-  if( 'pwd' in server_config):
-    credentials = pika.PlainCredentials(server_config['user'], server_config['pwd'])
+def singal_gen_handler(result_q, user_id, qserver_config, backup_q=None):
+  if( 'pwd' in qserver_config):
+    credentials = pika.PlainCredentials(qserver_config['user'], qserver_config['pwd'])
   else:
     credentials = pika.ConnectionParameters._DEFAULT
-  parameters = pika.ConnectionParameters(server_config['host'],
+  parameters = pika.ConnectionParameters(qserver_config['host'],
                                         credentials=credentials)
-  connection = pika.BlockingConnection(parameters)                                       
+  connection = pika.BlockingConnection(parameters)                            
   channel = connection.channel()
-  channel.queue_declare(queue=server_config['queue_name'])
+  channel.queue_declare(queue=qserver_config['queue_name'])
   
   while(True):
     if(not result_q.empty()):
@@ -68,13 +69,36 @@ def singal_gen_handler(result_q, user_id, sf, server_config):
           'user_id' : user_id,
           'timestamp' : result['time_end_record'],
           'sound_data' : result['data'],
-          'sampling_rate' : sf,
+          'sampling_rate' : result['sampling_rate'],
           'score' : min(result['dists']),
         }
-        channel.basic_publish(exchange='', routing_key='hotword_spotting_result', body=json.dumps(packet),
+        channel.basic_publish(exchange='', routing_key=qserver_config['queue_name'], body=json.dumps(packet),
           properties=pika.BasicProperties(delivery_mode = 2, # make message persistent
                       ))
+        if(backup_q != None):
+          backup_q.put(result)
+          
   connection.close()
+
+
+def backup_handler(backup_q, storage):
+  while(True):
+    if(not backup_q.empty()):
+      result = backup_q.get()
+      storage.backup(result)
+
+
+
+def signal_handler(sig, frame):
+  print('terminating threads')
+  # closing
+  record_p.join()
+  for p in worker_p:
+    p.join()
+  signal_p.join()
+  backup_p.join()
+  # manager.close()
+  sys.exit(0)
 
 
 if __name__ == '__main__':
@@ -96,12 +120,15 @@ if __name__ == '__main__':
   with open('.env-test.json') as f:
     config = json.load(f)
     
-  local_references_path = f"{args.tmp}/references/{args.user_id}"
-  download_references(config['azure']['references_connection_str'], args.user_id, local_references_path)
+  storage = Storage(args.user_id, config['azure']['references_connection_str'], config['azure']['hypothesis_connection_str'], tmp_dir=args.tmp)
+  storage.download_references()
+
   manager = mp.Manager()
   record_buffer = manager.list([-1 for _ in range(args.max_buffer)])
   task_q = manager.Queue() 
   result_q = manager.Queue()
+  backup_q = manager.Queue()
+
   record_p = mp.Process(target=task_gen_handler, args=(task_q, record_buffer, args.sf))
   record_p.start()
   
@@ -119,18 +146,30 @@ if __name__ == '__main__':
   # nfeat 5
   # 0.0208 0.8333 478.6751
   # 0.5903 0.8333 700.6847
+  
+  local_references_path = f"{args.tmp}/references/{args.user_id}"
+
+  backup_p = mp.Process(target=backup_handler, args=(backup_q, storage))
+  backup_p.start()
 
   hotword_spotting = HotWordSpotting(folder=local_references_path, threshold=args.thresh, n_feats=args.nfeats, n_fft=args.nfft, sf=args.sf) 
   worker_p = [mp.Process(target=worker_handler, args=(task_q, record_buffer, result_q, hotword_spotting)) \
     for _ in range(args.nprocs)]
   for p in worker_p:
     p.start()
-    
-  signal_p = mp.Process(target=singal_gen_handler, args=(result_q, args.user_id, args.sf, config['rabbitmq']))
+  
+  signal_p = mp.Process(target=singal_gen_handler, args=(result_q, args.user_id, config['rabbitmq'], backup_q))
   signal_p.start()
 
-  record_p.join()
-  for p in worker_p:
-    p.join()
-  singal_p.join()
-  manager.close()
+  
+  signal.signal(signal.SIGINT, signal_handler)
+  signal.pause()
+
+
+  # # closing
+  # record_p.join()
+  # for p in worker_p:
+  #   p.join()
+  # signal_p.join()
+  # backup_p.join()
+  # manager.close()
