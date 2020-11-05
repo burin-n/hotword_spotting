@@ -96,7 +96,8 @@ def signal_handler(sig, frame):
   for p in worker_p:
     p.join()
   signal_p.join()
-  backup_p.join()
+  if(backup_q != None):
+    backup_p.join()
   # manager.close()
   sys.exit(0)
 
@@ -108,9 +109,10 @@ if __name__ == '__main__':
   parser.add_argument('user_id', help="cuYY-XXXXX : user_id should match the name of the container storing his references")
   parser.add_argument('--sf', type=int, default=8000, help='sampling frequency of to be recorded sound. This should match the sampling frequency of references')
   parser.add_argument('--nprocs', type=int, default=2, help='number of worker processes. This speed up the runtime when there are many references. (default=2)')
-  parser.add_argument('--thresh', type=int, default=190, help='threshold for hotword spotting. A lower threshold would yeild more false positive.')
-  parser.add_argument('--nfeats', type=int, default=6, help='number of mfcc features used in comparing between references sound and hypothesys sound')
-  parser.add_argument('--nfft', type=int, default=2048, help='number of samples used for calculating fft')
+  parser.add_argument('--thresh', type=int, default=120, help='threshold for hotword spotting. A lower threshold would yeild more false positive.')
+  parser.add_argument('--nfeats', type=int, default=5, help='number of mfcc features used in comparing between references sound and hypothesys sound')
+  parser.add_argument('--nfft', type=int, default=1024, help='number of samples used for calculating fft')
+  parser.add_argument('--cmn', type=bool, default=True, help='apply speaker-based ceptral mean normalization')
   parser.add_argument('--max_buffer', type=int, default=50, help='size of the circular buffer that is used for storing recorded speech.')
   parser.add_argument('--tmp', type=str, default="tmp", help='location of downloaded references')
   args = parser.parse_args()
@@ -120,39 +122,47 @@ if __name__ == '__main__':
   with open('.env-test.json') as f:
     config = json.load(f)
     
-  storage = Storage(args.user_id, config['azure']['references_connection_str'], config['azure']['hypothesis_connection_str'], tmp_dir=args.tmp)
+  storage = Storage(args.user_id, config['azure']['references_connection_str'], config['azure'].get('hypothesis_connection_str', None), tmp_dir=args.tmp)
   storage.download_references()
 
   manager = mp.Manager()
   record_buffer = manager.list([-1 for _ in range(args.max_buffer)])
   task_q = manager.Queue() 
   result_q = manager.Queue()
-  backup_q = manager.Queue()
+  if(config['azure'].get('hypothesis_connection_str', None) != None):
+    backup_q = manager.Queue()
+  else:
+    backup_q = None
 
   record_p = mp.Process(target=task_gen_handler, args=(task_q, record_buffer, args.sf))
   record_p.start()
   
-  # n_fft = 1024
-  # nfeat 5
+  # cmn nftt=2048
+  # nfeat=5
   # fpr    tpr    threshold
-  # 0.0486 0.6667 179.3669
-  # 0.1111 0.6667 191.8449
-  # n_fft = 2048
-  # nfeat 6
-  # fpr    tpr    threshold
-  # 0.0486 0.8333 206.7914
-  # 0.1042 0.8333 220.8565
-  # no mfcc0
-  # nfeat 5
-  # 0.0208 0.8333 478.6751
-  # 0.5903 0.8333 700.6847
-  
+  # 0.0208 0.3333 148.6144
+  # 0.0347 0.8333 164.4070
+  # nfeat 13
+  # fpr___ tpr___ threshold
+  # 0.0278 0.5000 248.4595
+  # 0.0486 1.0000 259.5595
+
+  # cmn nfft=1024
+  # nfeat=5
+  # fpr___ tpr___ threshold
+  # 0.0208 0.1667 156.5786
+  # 0.0486 0.1667 170.4910
+  # nfeat 13
+  # fpr___ tpr___ threshold
+  # 0.0208 0.3333 255.0371
+  # 0.1250 0.3333 289.3839
   local_references_path = f"{args.tmp}/references/{args.user_id}"
 
-  backup_p = mp.Process(target=backup_handler, args=(backup_q, storage))
-  backup_p.start()
+  if(backup_q != None):
+    backup_p = mp.Process(target=backup_handler, args=(backup_q, storage))
+    backup_p.start()
 
-  hotword_spotting = HotWordSpotting(folder=local_references_path, threshold=args.thresh, n_feats=args.nfeats, n_fft=args.nfft, sf=args.sf) 
+  hotword_spotting = HotWordSpotting(folder=local_references_path, threshold=args.thresh, n_feats=args.nfeats, n_fft=args.nfft, sf=args.sf, cmn=args.cmn)
   worker_p = [mp.Process(target=worker_handler, args=(task_q, record_buffer, result_q, hotword_spotting)) \
     for _ in range(args.nprocs)]
   for p in worker_p:

@@ -8,14 +8,16 @@ import os
 
 class HotWordSpotting():
 
-  def __init__(self, index_file_path=None, folder=None, threshold=4500, sf=8000, n_feats=13, n_fft=2048, no_mfcc0=False):
+  def __init__(self, index_file_path=None, folder=None, threshold=4500, sf=8000, n_feats=13, n_fft=2048, no_mfcc0=False, cmn=False):
     r"""Index_file contains `path,trancsript` in csv format
+    # cmn : apply ceptral mean normalization based on the global statistic of the speaker
     """
     self.sf = sf
     self.n_feats = n_feats
     self.threshold = threshold
     self.n_fft = n_fft
     self.no_mfcc0 = no_mfcc0
+    self.cmn = cmn
 
     if(index_file_path != None):
       index_df = pd.read_csv(index_file_path)
@@ -24,19 +26,31 @@ class HotWordSpotting():
     elif(folder != None):
       self.ref_name = [f for f in sorted(os.listdir(folder)) if f != '.DS_Store']
       self.ref_path = [os.path.join(folder, f) for f in self.ref_name]
-      self.ref_lists = self.load_references(self.ref_path)
+      self.ref_lists = self.load_references(self.ref_path, self.cmn)
       print(self.ref_path)    
     else:
       raise NotImplementedError()
   
 
-
-  def load_references(self, ref_paths):
+  def load_references(self, ref_paths, cmn=False):
     ref_lists = []
+    if(cmn):
+      stats = np.zeros(shape=(self.n_feats,)) 
+      stats_len = 0
+    
     for ref in ref_paths:
       sig, rate = librosa.load(ref, sr=self.sf)
-      feats = librosa.feature.mfcc(sig, rate, n_mfcc=self.n_feats, n_fft=1024)
+      feats = librosa.feature.mfcc(sig, rate, n_mfcc=self.n_feats, n_fft=self.n_fft)
       ref_lists.append(feats)
+      # print(feats.shape)
+      if (cmn): 
+        stats += feats.sum(axis=1)
+        stats_len += feats.shape[1]
+    
+    if(cmn):
+      self.spk_mean_stats = (stats/stats_len).reshape(-1,1)
+      ref_lists = [feats-self.spk_mean_stats  for feats in ref_lists]
+        
     return ref_lists
 
 
@@ -72,6 +86,9 @@ class HotWordSpotting():
         self.ref_name :folat: [1, .., len(ref)] name of reference files
     """
     x = librosa.feature.mfcc(x, self.sf,  n_mfcc=self.n_feats, n_fft=self.n_fft)
+    if(self.cmn):
+      x -= self.spk_mean_stats
+
     if(self.no_mfcc0):
       x = x[1:]
   

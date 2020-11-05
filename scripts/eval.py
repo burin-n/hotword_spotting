@@ -1,7 +1,11 @@
+import sys, os, inspect
+currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir)
+sys.path.insert(0,parentdir)
+
 from queue import Queue
 from src.HotWordSpotting import HotWordSpotting
 from src.ReadAudio import ReadAudio
-import os
 import pandas as pd
 
 nfeat = []
@@ -22,7 +26,7 @@ for n_feats in range(1,14): #[1,2,3,4,5,6,7,8,9,10,11,12,13]:
   for spk in ["spk099", "spk100", "spk101", "spk102"]:
     if(spk == '.DS_Store'): continue
 
-    spotter = HotWordSpotting(folder=f'{data_dir}/{spk}', threshold=275,  n_feats=n_feats)
+    spotter = HotWordSpotting(folder=f'{data_dir}/{spk}', threshold=275,  n_feats=n_feats, n_fft=2048, cmn=True)
 
     ref_path = spotter.ref_path
     ref_len = [r.shape[1] for r in spotter.ref_lists ]
@@ -40,7 +44,7 @@ for n_feats in range(1,14): #[1,2,3,4,5,6,7,8,9,10,11,12,13]:
       seg=0
       while(not q.empty()):
         frame = q.get()
-        found, dist = spotter(frame, return_dist=True) 
+        found, dist, _ = spotter(frame, return_dist=True) 
         pos = []
         for i, ref in enumerate(ref_path):
           if('help' in ref):
@@ -67,5 +71,5 @@ pd.DataFrame({
   'dist' : d_l,
   'ref_len' : len_r,
   'label' : lab_l
-}).to_csv('score.csv', index=False)
+}).to_csv('score_cmn_2048_notnorm.csv', index=False)
 

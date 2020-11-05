@@ -6,7 +6,7 @@ from datetime import datetime
 class RecordAudio():
   
   def __init__(self):
-    self.chunk = 1000  # Record in chunks of 1024 samples
+    self.chunk = 1000  # Record in chunks of 1000 samples
     self.sample_format = pyaudio.paInt16  # 16 bits per sample
     self.channels = 1
     self.fs = 8000  # Record at 44100 samples per second
