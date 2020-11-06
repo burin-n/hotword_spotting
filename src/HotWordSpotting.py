@@ -1,14 +1,13 @@
 import numpy as np
 import librosa
 from dtw import *
-import wave
 import pandas as pd
 import time
 import os
 
 class HotWordSpotting():
 
-  def __init__(self, index_file_path=None, folder=None, threshold=4500, sf=8000, n_feats=13, n_fft=2048, no_mfcc0=False, cmn=False):
+  def __init__(self, index_file_path=None, folder=None, threshold=150, sf=8000, n_feats=5, n_fft=2048, no_mfcc0=False, cmn=True):
     r"""Index_file contains `path,trancsript` in csv format
     # cmn : apply ceptral mean normalization based on the global statistic of the speaker
     """
@@ -107,25 +106,13 @@ class HotWordSpotting():
       
 
 if __name__ == '__main__':
-  # for n_feats in [1, 2, 3, 4, 5, 13, 15, 20]:
-  for n_feats in [13]:
-  # n_feats = 13
-    spotter = HotWordSpotting(folder='data/references/spk000', threshold=5000, n_feats=n_feats)
-    # spotter = HotWordSpotting(folder='data_8k/references/spk5/', threshold=5000)
-
-    quries = [
-      # 'data/query/spk1/help_3.wav',
-      # 'data/query/spk1/help_4.wav',
-      # 'data/query/spk1/hi_0.wav'
-      'data_8k/query/spk5/22-help-1.wav',
-      'data_8k/query/spk5/22-help-ouch-1.wav',
-      'data_8k/references/spk5/22-help-2.wav',
-      'data_8k/references/spk5/22-help-ouch-2.wav',
-    ]
-    print(f"=== n_feats: {n_feats}")
-    for q in quries:
-      rec, rate = librosa.load(q, sf=8000)
-      print(q)
-      found, dist = spotter(rec, return_dist=True) 
-      print(found, dist)
-    print()
+  spotter = HotWordSpotting(folder='tmp/references/cu63-test2', threshold=160, n_feats=5)
+  quries = [
+    'tmp/references/cu63-test2/help_1.wav'
+  ]
+  for q in quries:
+    rec, rate = librosa.load(q, sr=8000)
+    found, dist, _ = spotter(rec, return_dist=True) 
+    print(found, dist)
+  time.sleep(3)
+  print()

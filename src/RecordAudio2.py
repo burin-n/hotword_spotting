@@ -112,11 +112,10 @@ def consume(record_buffer, start, end):
 
 if __name__ == '__main__':
   from queue import Queue
-  
-  maximum_buffer = 8000
+  maximum_buffer = 50
   task_q = Queue()
   record_buffer = [-1 for _ in range(maximum_buffer)]
-  recorder = RecordAudio(8000)
+  recorder = RecordAudio(8000, seconds=3)
   recorder(task_q, record_buffer, terminate=True)
   while(not task_q.empty()):
     task = task_q.get()

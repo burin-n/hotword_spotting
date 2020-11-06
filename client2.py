@@ -10,7 +10,7 @@ import json
 import pika
 import pickle
 import sys
-import signal
+#import signal
 
 def consume(record_buffer, start, end):
   if(start < 0 or end < start):
@@ -103,26 +103,26 @@ def signal_handler(sig, frame):
 
 
 if __name__ == '__main__':
-  mp.set_start_method('spawn')
+  # mp.set_start_method('spawn')
   import argparse
   parser = argparse.ArgumentParser(description='Client for hotword detection service')
   parser.add_argument('user_id', help="cuYY-XXXXX : user_id should match the name of the container storing his references")
   parser.add_argument('--sf', type=int, default=8000, help='sampling frequency of to be recorded sound. This should match the sampling frequency of references')
-  parser.add_argument('--nprocs', type=int, default=2, help='number of worker processes. This speed up the runtime when there are many references. (default=2)')
-  parser.add_argument('--thresh', type=int, default=120, help='threshold for hotword spotting. A lower threshold would yeild more false positive.')
+  parser.add_argument('--nprocs', type=int, default=1, help='number of worker processes. This speed up the runtime when there are many references. (default=2)')
+  parser.add_argument('--thresh', type=int, default=155, help='threshold for hotword spotting. A lower threshold would yeild more false positive.')
   parser.add_argument('--nfeats', type=int, default=5, help='number of mfcc features used in comparing between references sound and hypothesys sound')
-  parser.add_argument('--nfft', type=int, default=1024, help='number of samples used for calculating fft')
-  parser.add_argument('--cmn', type=bool, default=True, help='apply speaker-based ceptral mean normalization')
-  parser.add_argument('--max_buffer', type=int, default=50, help='size of the circular buffer that is used for storing recorded speech.')
+  parser.add_argument('--nfft', type=int, default=2048, help='number of samples used for calculating fft')
+  parser.add_argument('--cmn', type=bool,s default=True, help='apply speaker-based ceptral mean normalization')
+parser.add_argument('--max_buffer', type=int, default=500, help='size of the circular buffer that is used for storing recorded speech. (500 ~ 1 min buffer for 8k audio)')
   parser.add_argument('--tmp', type=str, default="tmp", help='location of downloaded references')
   args = parser.parse_args()
   print(args)
 
 
-  with open('.env-test.json') as f:
+  with open('env.json') as f:
     config = json.load(f)
-    
-  storage = Storage(args.user_id, config['azure']['references_connection_str'], config['azure'].get('hypothesis_connection_str', None), tmp_dir=args.tmp)
+  user_id = args.user_id.lower()
+  storage = Storage(user_id, config['azure']['references_connection_str'], config['azure'].get('hypothesis_connection_str', None), tmp_dir=args.tmp)
   storage.download_references()
 
   manager = mp.Manager()
@@ -146,7 +146,6 @@ if __name__ == '__main__':
   # fpr___ tpr___ threshold
   # 0.0278 0.5000 248.4595
   # 0.0486 1.0000 259.5595
-
   # cmn nfft=1024
   # nfeat=5
   # fpr___ tpr___ threshold
@@ -156,7 +155,7 @@ if __name__ == '__main__':
   # fpr___ tpr___ threshold
   # 0.0208 0.3333 255.0371
   # 0.1250 0.3333 289.3839
-  local_references_path = f"{args.tmp}/references/{args.user_id}"
+  local_references_path = f"{args.tmp}/references/{user_id}"
 
   if(backup_q != None):
     backup_p = mp.Process(target=backup_handler, args=(backup_q, storage))
@@ -168,18 +167,17 @@ if __name__ == '__main__':
   for p in worker_p:
     p.start()
   
-  signal_p = mp.Process(target=singal_gen_handler, args=(result_q, args.user_id, config['rabbitmq'], backup_q))
+  signal_p = mp.Process(target=singal_gen_handler, args=(result_q, user_id, config['rabbitmq'], backup_q))
   signal_p.start()
 
   
-  signal.signal(signal.SIGINT, signal_handler)
-  signal.pause()
-
+  #signal.signal(signal.SIGINT, signal_handler)
+  #signal.pause()
 
   # # closing
-  # record_p.join()
-  # for p in worker_p:
-  #   p.join()
-  # signal_p.join()
-  # backup_p.join()
-  # manager.close()
+  record_p.join()
+  for p in worker_p:
+    p.join()
+  signal_p.join()
+  backup_p.join()
+  #manager.close()
