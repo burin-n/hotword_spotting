@@ -18,40 +18,53 @@ lab_l = []
 
 
 recorder = ReadAudio()
+hop_length = None
+win_length = 0.5
+nfft=4096
+use_energy = False
+norm = 'cmnperspk'
 
-for n_feats in range(1,14): #[1,2,3,4,5,6,7,8,9,10,11,12,13]:
+# for n_feats in [5,6,7,8,9,10,11,12,13]:
+for n_feats in [5, 13, 20]:
 
-  data_dir = 'data/references'
-  # for spk in sorted(os.listdir(data_dir)):
-  for spk in ["spk099", "spk100", "spk101", "spk102"]:
-    if(spk == '.DS_Store'): continue
+  # data_dir = '/Users/burin/workspace/hotword_data/data/test_8k'
+  query_dir = '/Users/burin/workspace/hotword_data/tuning/help' 
+  references = "/Users/burin/workspace/hotword_data/Patient_Recordings_[20_Records]_8k"
 
-    spotter = HotWordSpotting(folder=f'{data_dir}/{spk}', threshold=275,  n_feats=n_feats, n_fft=2048, cmn=True)
+  spotter1 = HotWordSpotting(test_folder=references, 
+      threshold=275, n_feats=n_feats, n_fft=nfft, hop_length=hop_length, win_length=win_length, norm=norm, use_energy=use_energy)    
 
-    ref_path = spotter.ref_path
-    ref_len = [r.shape[1] for r in spotter.ref_lists ]
 
+  #for spk in [f"spk{str(num).zfill(3)}" for num in range(99,120)]:
+  for spk in ['fair']:
+    if(not os.path.exists(f"{query_dir}/{spk}")):
+      continue
+
+    print(spk)
     queries = []
-    for f in sorted(os.listdir(f"data/queries/{spk}")):
+    for f in sorted(os.listdir(f"{query_dir}/{spk}")):
         if(f == '.DS_Store'): continue
-        queries.append( os.path.join(f"data/queries/{spk}/{f}") )
+        queries.append( os.path.join(f"{query_dir}/{spk}/{f}") )
+    if(len(queries) == 0):
+      continue
 
+    spotter2 = HotWordSpotting(folder=f"{query_dir}/{spk}", 
+      threshold=275, n_feats=n_feats, n_fft=nfft, hop_length=hop_length, win_length=win_length, norm=norm, use_energy=use_energy)
+
+
+    ref_path = spotter1.ref_path
+    ref_len = [r.shape[1] for r in spotter1.ref_lists]
 
     for query in queries:
       q = Queue()
       recorder(q, from_file=query, ret_format='float')
       
-      seg=0
+      seg = 0
+      pos = 0
       while(not q.empty()):
         frame = q.get()
-        found, dist, _ = spotter(frame, return_dist=True) 
-        pos = []
+        found, dist, _ = spotter1(frame, return_dist=True) 
         for i, ref in enumerate(ref_path):
-          if('help' in ref):
-            pos = 1
-          else:
-            pos = 0
-        
           nfeat.append(n_feats)
           q_l.append(query)
           seg_l.append(seg)
@@ -59,7 +72,29 @@ for n_feats in range(1,14): #[1,2,3,4,5,6,7,8,9,10,11,12,13]:
           d_l.append(dist[i])
           len_r.append(ref_len[i])
           lab_l.append(pos)
+          seg+=1
 
+    
+    ref_path = spotter2.ref_path
+    ref_len = [r.shape[1] for r in spotter2.ref_lists ]   
+    
+    for query in queries:
+      q = Queue()
+      # print(query)
+      recorder(q, from_file=query, ret_format='float')
+      seg=0
+      pos=1
+      while(not q.empty()):
+        frame = q.get()
+        found, dist, _ = spotter2(frame, return_dist=True) 
+        for i, ref in enumerate(ref_path):
+          nfeat.append(n_feats)
+          q_l.append(query)
+          seg_l.append(seg)
+          r_l.append(ref)
+          d_l.append(dist[i])
+          len_r.append(ref_len[i])
+          lab_l.append(pos)
           seg+=1
 
 
@@ -67,9 +102,9 @@ pd.DataFrame({
   'nmfcc' : nfeat,
   'query' : q_l,
   'ref' : r_l,
-  'seg_id' : seg,
+  'seg_id' : seg_l,
   'dist' : d_l,
   'ref_len' : len_r,
   'label' : lab_l
-}).to_csv('score_cmn_2048_notnorm.csv', index=False)
+}).to_csv('tune_cmnperspk_500ms_noc0.csv', index=False)
 

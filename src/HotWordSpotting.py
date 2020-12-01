@@ -4,59 +4,112 @@ from dtw import *
 import pandas as pd
 import time
 import os
+import json
 
 class HotWordSpotting():
 
-  def __init__(self, index_file_path=None, folder=None, threshold=150, sf=8000, n_feats=5, n_fft=2048, no_mfcc0=False, cmn=True):
+  def __init__(self, index_file_path=None, folder=None, threshold=150, sf=8000, n_feats=5, n_fft=2048, use_energy=False, 
+    norm="cmnperspk", sensitivity_scale_step = 10, test_folder = None, hop_length=0.01, win_length=0.025):
     r"""Index_file contains `path,trancsript` in csv format
-    # cmn : apply ceptral mean normalization based on the global statistic of the speaker
+    # norm : ['no', 'cmnperspk', 'cmnperutt']
     """
     self.sf = sf
     self.n_feats = n_feats
     self.threshold = threshold
     self.n_fft = n_fft
-    self.no_mfcc0 = no_mfcc0
-    self.cmn = cmn
+    if(hop_length != None):
+      self.hop_length = int(hop_length * sf)
+    else:
+      self.hop_length = hop_length
+    if(win_length != None):
+      self.win_length = int(win_length * sf)
+    else:
+      self.win_length = win_length
+    self.use_energy = use_energy
+    self.norm = norm
+    assert self.norm in ['no', 'cmnperspk', 'cmnperutt']
 
     if(index_file_path != None):
       index_df = pd.read_csv(index_file_path)
       self.transcript = index_df['transcript'].to_list()
       self.ref_lists = self.load_references(index_df['path'].to_list())
+
+    elif(test_folder != None):
+      self.ref_name = []
+      for folder in os.listdir(test_folder):
+        if(folder != ".DS_Store"):
+          self.ref_name.extend([f"{folder}/{f}" for f in sorted(os.listdir(f"{test_folder}/{folder}")) if f.endswith('.wav')])
+      self.ref_path = [os.path.join(test_folder, f) for f in self.ref_name]
+      self.ref_lists = self.load_references(self.ref_path)
+      # print('size of ref', len(self.ref_path))
+
     elif(folder != None):
-      self.ref_name = [f for f in sorted(os.listdir(folder)) if f != '.DS_Store']
+      self.ref_name = [f for f in sorted(os.listdir(folder)) if f.endswith('.wav')]
       self.ref_path = [os.path.join(folder, f) for f in self.ref_name]
-      self.ref_lists = self.load_references(self.ref_path, self.cmn)
-      print(self.ref_path)    
+      self.ref_lists = self.load_references(self.ref_path)
+      # print(self.ref_path)
+      
+      sensitivity_file = 'environmental_sensitivity.json'
+      if(sensitivity_file in os.listdir(folder)):
+        #sens = json.load(open(sensitivity_file))
+        with open(os.path.join(folder, sensitivity_file)) as f:
+          sens = int(f.readlines()[0].split(':')[-1][:-1])
+          scale = sens - 3
+        self.threshold += scale * sensitivity_scale_step    
+
     else:
       raise NotImplementedError()
-  
 
-  def load_references(self, ref_paths, cmn=False):
+    print("######## threshold: {} n_feats:{} n_fft:{} hop_length:{} win_length:{} use_energy:{} norm:{}\n".format(
+      self.threshold, self.n_feats, self.n_fft, self.hop_length, self.win_length, self.use_energy, self.norm))
+
+
+  def normalize(self, x):
+    if (self.norm == 'cmnperutt'):
+      x -= x.mean(axis=1).reshape(-1,1)
+    elif(self.norm == 'cmnperspk'):
+      x -= self.spk_mean_stats
+    return x
+
+
+  def load_references(self, ref_paths):
     ref_lists = []
-    if(cmn):
-      stats = np.zeros(shape=(self.n_feats,)) 
+
+    if(self.norm == 'cmnperspk'):
+      if(not self.use_energy):
+        stats = np.zeros(shape=(self.n_feats-1,)) 
+      else:
+        stats = np.zeros(shape=(self.n_feats,)) 
       stats_len = 0
     
     for ref in ref_paths:
       sig, rate = librosa.load(ref, sr=self.sf)
-      feats = librosa.feature.mfcc(sig, rate, n_mfcc=self.n_feats, n_fft=self.n_fft)
-      ref_lists.append(feats)
-      # print(feats.shape)
-      if (cmn): 
+      feats = librosa.feature.mfcc(sig, rate, n_mfcc=self.n_feats, 
+                      n_fft=self.n_fft, hop_length=self.hop_length, win_length=self.win_length)
+
+      if(not self.use_energy):
+        feats = feats[1:]
+
+      if(self.norm == 'cmnperutt'):
+        feats = self.normalize(feats)
+      elif(self.norm == 'cmnperspk'):
         stats += feats.sum(axis=1)
         stats_len += feats.shape[1]
-    
-    if(cmn):
+
+      ref_lists.append(feats)
+        
+    if(self.norm == 'cmnperspk'):
       self.spk_mean_stats = (stats/stats_len).reshape(-1,1)
       ref_lists = [feats-self.spk_mean_stats  for feats in ref_lists]
-        
     return ref_lists
+
 
 
   def spotting(self, x, return_dist=False):
     # X : query matrix [n_feats, n_timesteps]
     dists = []
     for i, ref in enumerate(self.ref_lists):
+
       dist = self.multi_dim_dtw(x, ref)
       dists.append(dist)
     dists = np.array(dists)
@@ -84,13 +137,13 @@ class HotWordSpotting():
         dists,    : folat:[1, .., len(ref)] distance for each of the reference
         self.ref_name :folat: [1, .., len(ref)] name of reference files
     """
-    x = librosa.feature.mfcc(x, self.sf,  n_mfcc=self.n_feats, n_fft=self.n_fft)
-    if(self.cmn):
-      x -= self.spk_mean_stats
+    x = librosa.feature.mfcc(x, self.sf,  n_mfcc=self.n_feats, win_length=self.win_length, hop_length=self.hop_length, n_fft=self.n_fft)
+    #x = librosa.feature.mfcc(x, self.sf,  n_mfcc=self.n_feats, n_fft=self.n_fft)
 
-    if(self.no_mfcc0):
+    if(not self.use_energy):
       x = x[1:]
-  
+    x = self.normalize(x)
+
     if(return_dist):
       is_found, dists = self.spotting(x, return_dist=return_dist)
     else:
@@ -106,9 +159,10 @@ class HotWordSpotting():
       
 
 if __name__ == '__main__':
-  spotter = HotWordSpotting(folder='tmp/references/cu63-test2', threshold=160, n_feats=5)
+  spotter = HotWordSpotting(folder='tmp/references/test-0002/', threshold=160,  n_feats=20, sf=8000, norm="cmnperspk",
+    n_fft=2048, hop_length=None, win_length=None)
   quries = [
-    'tmp/references/cu63-test2/help_1.wav'
+    'tmp/references/test-0002/test-1.wav'
   ]
   for q in quries:
     rec, rate = librosa.load(q, sr=8000)

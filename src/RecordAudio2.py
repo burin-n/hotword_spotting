@@ -5,7 +5,7 @@ from datetime import datetime
 
 class RecordAudio():
   
-  def __init__(self, fs=8000, seconds=1.2 , overlap=0.2, chuck=1000):
+  def __init__(self, fs=8000, seconds=2, overlap=0.50, chuck=1000):
     self.chunk = chuck  # Record in chunks of 1000 samples
     self.sample_format = pyaudio.paInt16  # 16 bits per sample
     self.channels = 1
@@ -32,6 +32,7 @@ class RecordAudio():
                     rate=self.fs,
                     frames_per_buffer=self.chunk,
                     input=True,
+                    input_device_index=None,
                     )
     
     
@@ -66,6 +67,7 @@ class RecordAudio():
   
     while (True):
       # push task_q every 1 seconds chuck
+      print('recoding..', datetime.now())
       index_start_5sec = index_end - int(self.fs / self.chunk * 5)
       # found init data, revert to start index
       if(index_start_5sec < 0 and buffer_list[index_start_5sec] == -1):
@@ -112,15 +114,20 @@ def consume(record_buffer, start, end):
 
 if __name__ == '__main__':
   from queue import Queue
-  maximum_buffer = 50
-  task_q = Queue()
-  record_buffer = [-1 for _ in range(maximum_buffer)]
-  recorder = RecordAudio(8000, seconds=3)
-  recorder(task_q, record_buffer, terminate=True)
-  while(not task_q.empty()):
-    task = task_q.get()
-    data = consume(record_buffer, task['index_start'], task['index_end'])
-
   import soundfile as sf
-  sf.write('test.wav', data, 8000, 'PCM_16')
+  maximum_buffer = 100
+  
+  
+  for i in range(1,37):
+    print(i)
+    task_q = Queue()
+    record_buffer = [-1 for _ in range(maximum_buffer)]
+    recorder = RecordAudio(8000, seconds=2)
+    recorder(task_q, record_buffer, terminate=True)
+    
+    while(not task_q.empty()):
+      task = task_q.get()
+      data = consume(record_buffer, task['index_start'], task['index_end'])
+      sf.write(f'fair/test-{i}.wav', data, 8000, 'PCM_16')
+    
 

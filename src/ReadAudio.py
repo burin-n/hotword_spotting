@@ -25,7 +25,7 @@ class ReadAudio():
     else:
       raise NotImplementedError()
 
-    print('Streaming...')
+    # print('Streaming...')
     f = wave.open(from_file, 'rb')
 
     frames = []

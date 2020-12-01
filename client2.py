@@ -24,7 +24,12 @@ def consume(record_buffer, start, end):
 
 
 def worker_handler(task_q, record_buffer, result_q, work):
+  i=0
   while(True):
+    i+=1
+    if(i%100000 == 0):
+      print(f'### worker {datetime.now()}')
+      i=0 
     if(task_q.empty()):
       task = task_q.get()
       print(task)
@@ -38,13 +43,16 @@ def worker_handler(task_q, record_buffer, result_q, work):
       result_packet['data'] = consume(record_buffer, task['index_start_5sec'], task['index_end']).tolist()
       result_packet['ref_name'] = ref_name
       result_q.put(result_packet)
+  print('working exit')
 
 
 def task_gen_handler(task_q, record_buffer, sf):
   recorder = RecordAudio(sf)
   recorder(task_q, record_buffer)
+  print('task gen exit')
 
 
+#def singal_gen_handler(result_q, user_id, connection, backup_q=None):
 def singal_gen_handler(result_q, user_id, qserver_config, backup_q=None):
   if( 'pwd' in qserver_config):
     credentials = pika.PlainCredentials(qserver_config['user'], qserver_config['pwd'])
@@ -55,15 +63,27 @@ def singal_gen_handler(result_q, user_id, qserver_config, backup_q=None):
   connection = pika.BlockingConnection(parameters)                            
   channel = connection.channel()
   channel.queue_declare(queue=qserver_config['queue_name'])
-  
+  i=0
+
+  logfile = open('worker.log', 'a')
+  print('##############', file=logfile, flush=True)
+
   while(True):
+    i+=1
+    if(i%100000 == 0):
+      print(f'### siggen {datetime.now()}')
+      i=0
     if(not result_q.empty()):
       result = result_q.get()
-      print("{} {} {} {} {}".format(
+      log_string = "{} {} {} {} {}".format(
         datetime.now().time(),
         result['time_end_record'], result['time_end_dtw'],
         result['results'], result['dists'],
-      ))
+      )
+
+      print(log_string, file=logfile, flush=True)
+      print(log_string, flush=True)
+
       if(len(result['results']) > 0):
         packet = {
           'user_id' : user_id,
@@ -77,8 +97,8 @@ def singal_gen_handler(result_q, user_id, qserver_config, backup_q=None):
                       ))
         if(backup_q != None):
           backup_q.put(result)
-          
-  connection.close()
+  print('sig gen exit!!!')
+  #connection.close()
 
 
 def backup_handler(backup_q, storage):
@@ -86,7 +106,6 @@ def backup_handler(backup_q, storage):
     if(not backup_q.empty()):
       result = backup_q.get()
       storage.backup(result)
-
 
 
 def signal_handler(sig, frame):
@@ -103,23 +122,27 @@ def signal_handler(sig, frame):
 
 
 if __name__ == '__main__':
-  # mp.set_start_method('spawn')
+  mp.set_start_method('spawn')
   import argparse
   parser = argparse.ArgumentParser(description='Client for hotword detection service')
   parser.add_argument('user_id', help="cuYY-XXXXX : user_id should match the name of the container storing his references")
   parser.add_argument('--sf', type=int, default=8000, help='sampling frequency of to be recorded sound. This should match the sampling frequency of references')
   parser.add_argument('--nprocs', type=int, default=1, help='number of worker processes. This speed up the runtime when there are many references. (default=2)')
-  parser.add_argument('--thresh', type=int, default=155, help='threshold for hotword spotting. A lower threshold would yeild more false positive.')
-  parser.add_argument('--nfeats', type=int, default=5, help='number of mfcc features used in comparing between references sound and hypothesys sound')
-  parser.add_argument('--nfft', type=int, default=2048, help='number of samples used for calculating fft')
-  parser.add_argument('--cmn', type=bool, default=True, help='apply speaker-based ceptral mean normalization')
+  parser.add_argument('--thresh', type=int, default=80, help='threshold for hotword spotting. A lower threshold would yeild more false positive.')
+  parser.add_argument('--nfeats', type=int, default=13, help='number of mfcc features used in comparing between references sound and hypothesys sound')
+  parser.add_argument('--nfft', type=int, default=4096, help='number of samples used for calculating fft')
+  parser.add_argument('--win_length', type=int, default=0.5, help='window size for fft in ms')
+  parser.add_argument('--hop_length', type=int, default=None, help='hop size for fft in ms')
+  parser.add_argument('--norm', type=str, default='cmnperspk', help='apply speaker-based ceptral mean normalization')
+  parser.add_argument('--use_energy', type=bool, default=False, help='use mfcc0 or not')
   parser.add_argument('--max_buffer', type=int, default=500, help='size of the circular buffer that is used for storing recorded speech. (500 ~ 1 min buffer for 8k audio)')
   parser.add_argument('--tmp', type=str, default="tmp", help='location of downloaded references')
   args = parser.parse_args()
   print(args)
 
+  os.remove('start.done')
 
-  with open('env.json') as f:
+  with open('env-test.json') as f:
     config = json.load(f)
   user_id = args.user_id.lower()
   storage = Storage(user_id, config['azure']['references_connection_str'], config['azure'].get('hypothesis_connection_str', None), tmp_dir=args.tmp)
@@ -136,48 +159,48 @@ if __name__ == '__main__':
 
   record_p = mp.Process(target=task_gen_handler, args=(task_q, record_buffer, args.sf))
   record_p.start()
-  
-  # cmn nftt=2048
-  # nfeat=5
-  # fpr    tpr    threshold
-  # 0.0208 0.3333 148.6144
-  # 0.0347 0.8333 164.4070
-  # nfeat 13
-  # fpr___ tpr___ threshold
-  # 0.0278 0.5000 248.4595
-  # 0.0486 1.0000 259.5595
-  # cmn nfft=1024
-  # nfeat=5
-  # fpr___ tpr___ threshold
-  # 0.0208 0.1667 156.5786
-  # 0.0486 0.1667 170.4910
-  # nfeat 13
-  # fpr___ tpr___ threshold
-  # 0.0208 0.3333 255.0371
-  # 0.1250 0.3333 289.3839
   local_references_path = f"{args.tmp}/references/{user_id}"
 
   if(backup_q != None):
     backup_p = mp.Process(target=backup_handler, args=(backup_q, storage))
     backup_p.start()
 
-  hotword_spotting = HotWordSpotting(folder=local_references_path, threshold=args.thresh, n_feats=args.nfeats, n_fft=args.nfft, sf=args.sf, cmn=args.cmn)
+  hotword_spotting = HotWordSpotting(folder=local_references_path, threshold=args.thresh, n_feats=args.nfeats, n_fft=args.nfft, sf=args.sf, norm=args.norm,\
+                                win_length=args.win_length, hop_length=args.hop_length, use_energy=args.use_energy)
   worker_p = [mp.Process(target=worker_handler, args=(task_q, record_buffer, result_q, hotword_spotting)) \
     for _ in range(args.nprocs)]
   for p in worker_p:
     p.start()
   
+
+  # if( 'pwd' in config['rabbitmq']):
+  #   credentials = pika.PlainCredentials(config['rabbitmq']['user'], config['rabbitmq']['pwd'])
+  # else:
+  #   credentials = pika.ConnectionParameters._DEFAULT
+  # parameters = pika.ConnectionParameters(config['rabbitmq']['host'],
+  #                                       credentials=credentials)
+  # connection = pika.BlockingConnection(parameters)                            
+  # channel = connection.channel()
+  # channel.queue_declare(queue=config['rabbitmq']['queue_name'])
+
+  # signal_p = mp.Process(target=singal_gen_handler, args=(result_q, user_id, channel, backup_q))
+  # signal_p.start()
+
   signal_p = mp.Process(target=singal_gen_handler, args=(result_q, user_id, config['rabbitmq'], backup_q))
   signal_p.start()
-
   
+
   #signal.signal(signal.SIGINT, signal_handler)
   #signal.pause()
 
   # # closing
-  record_p.join()
+  with open('start.done', 'w') as f:
+    pass
+  
   for p in worker_p:
     p.join()
   signal_p.join()
-  backup_p.join()
+  # backup_p.join()
+  record_p.join()
   #manager.close()
+  #connection.close()
