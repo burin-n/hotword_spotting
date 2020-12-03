@@ -9,7 +9,7 @@ import json
 class HotWordSpotting():
 
   def __init__(self, index_file_path=None, folder=None, threshold=150, sf=8000, n_feats=5, n_fft=2048, use_energy=False, 
-    norm="cmnperspk", sensitivity_scale_step = 10, test_folder = None, hop_length=0.01, win_length=0.025):
+    norm="cmnperspk", sensitivity_scale_step = 20, test_folder = None, hop_length=0.01, win_length=0.025):
     r"""Index_file contains `path,trancsript` in csv format
     # norm : ['no', 'cmnperspk', 'cmnperutt']
     """
@@ -27,7 +27,7 @@ class HotWordSpotting():
       self.win_length = win_length
     self.use_energy = use_energy
     self.norm = norm
-    assert self.norm in ['no', 'cmnperspk', 'cmnperutt']
+    assert self.norm in ['no', 'cmnperspk', 'cmnperutt', 'movavg']
 
     if(index_file_path != None):
       index_df = pd.read_csv(index_file_path)
@@ -35,13 +35,17 @@ class HotWordSpotting():
       self.ref_lists = self.load_references(index_df['path'].to_list())
 
     elif(test_folder != None):
-      self.ref_name = []
-      for folder in os.listdir(test_folder):
-        if(folder != ".DS_Store"):
-          self.ref_name.extend([f"{folder}/{f}" for f in sorted(os.listdir(f"{test_folder}/{folder}")) if f.endswith('.wav')])
-      self.ref_path = [os.path.join(test_folder, f) for f in self.ref_name]
+      self.ref_path = []
+      if(type(test_folder) == str):
+        test_folder = [test_folder]
+      for tfolder in test_folder:
+        self.ref_name = []
+        for folder in os.listdir(tfolder):
+          if(folder != ".DS_Store"):
+            self.ref_name.extend([f"{folder}/{f}" for f in sorted(os.listdir(f"{tfolder}/{folder}")) if f.endswith('.wav')])
+        self.ref_path.extend([os.path.join(tfolder, f) for f in self.ref_name])
       self.ref_lists = self.load_references(self.ref_path)
-      # print('size of ref', len(self.ref_path))
+      print('size of ref', len(self.ref_path))
 
     elif(folder != None):
       self.ref_name = [f for f in sorted(os.listdir(folder)) if f.endswith('.wav')]
@@ -84,6 +88,7 @@ class HotWordSpotting():
     
     for ref in ref_paths:
       sig, rate = librosa.load(ref, sr=self.sf)
+      sig = sig[-self.sf*2:]
       feats = librosa.feature.mfcc(sig, rate, n_mfcc=self.n_feats, 
                       n_fft=self.n_fft, hop_length=self.hop_length, win_length=self.win_length)
 
@@ -159,10 +164,10 @@ class HotWordSpotting():
       
 
 if __name__ == '__main__':
-  spotter = HotWordSpotting(folder='tmp/references/test-0002/', threshold=160,  n_feats=20, sf=8000, norm="cmnperspk",
+  spotter = HotWordSpotting(folder='tmp/references/test-0001/', threshold=160,  n_feats=20, sf=8000, norm="cmnperspk",
     n_fft=2048, hop_length=None, win_length=None)
   quries = [
-    'tmp/references/test-0002/test-1.wav'
+    'tmp/references/test-0001/help-1.wav'
   ]
   for q in quries:
     rec, rate = librosa.load(q, sr=8000)

@@ -14,6 +14,7 @@ def main(host):
     def callback(ch, method, properties, body):
         body_dict = json.loads(body.decode())
         print(body_dict.keys())
+        
         print(" [{}] Received {} {} {} {}".format(body_dict['user_id'], body_dict['timestamp'], body_dict['sampling_rate'],
             body_dict['score'], np.asarray(body_dict['sound_data']).shape))
         write('out_2.wav', body_dict['sampling_rate'], np.asarray(body_dict['sound_data']))

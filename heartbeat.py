@@ -5,10 +5,12 @@ import psutil
 import signal
 
 filename = 'client2.py'
+user = os.environ['USER'] 
 
 while True:
     """However, you should be careful with the '.wait()'"""
-    pid = subprocess.Popen(['python', filename, 'test-0003']).pid
+    
+    pid = subprocess.Popen(['python', filename, user]).pid
     time.sleep(60*30)
     # os.kill(pid, signal.SIGTERM)
     parent = psutil.Process(pid)

@@ -5,7 +5,7 @@ from datetime import datetime
 
 class RecordAudio():
   
-  def __init__(self, fs=8000, seconds=2, overlap=0.50, chuck=1000):
+  def __init__(self, fs=8000, seconds=2, overlap=0.5, chuck=1000):
     self.chunk = chuck  # Record in chunks of 1000 samples
     self.sample_format = pyaudio.paInt16  # 16 bits per sample
     self.channels = 1
@@ -16,7 +16,7 @@ class RecordAudio():
     self.p = pyaudio.PyAudio()  # Create an interface to PortAudio
 
 
-  def __call__(self, output_q, buffer_list, terminate=False, ret_format='float'):
+  def __call__(self, output_q, buffer_list, is_terminate=[], terminate=False, ret_format='float'):
     if(ret_format == 'float'):
       converter = librosa.util.buf_to_float 
     elif(ret_format == 'int'):
@@ -66,6 +66,8 @@ class RecordAudio():
       return
   
     while (True):
+      if(is_terminate[0] == 1):
+        break
       # push task_q every 1 seconds chuck
       print('recoding..', datetime.now())
       index_start_5sec = index_end - int(self.fs / self.chunk * 5)
@@ -97,7 +99,7 @@ class RecordAudio():
     self.stream.close()
     # Terminate the PortAudio interface
     self.p.terminate()
-    print('Finished recording')
+    print('recording exit')
 
 
 def consume(record_buffer, start, end):
@@ -117,9 +119,11 @@ if __name__ == '__main__':
   import soundfile as sf
   maximum_buffer = 100
   
-  
-  for i in range(1,37):
-    print(i)
+
+  tgt_folder = 'tune_data'
+
+  for i in range(1,4):
+    print('ช่วยด้วย', i)
     task_q = Queue()
     record_buffer = [-1 for _ in range(maximum_buffer)]
     recorder = RecordAudio(8000, seconds=2)
@@ -128,6 +132,22 @@ if __name__ == '__main__':
     while(not task_q.empty()):
       task = task_q.get()
       data = consume(record_buffer, task['index_start'], task['index_end'])
-      sf.write(f'fair/test-{i}.wav', data, 8000, 'PCM_16')
+      sf.write(f'{tgt_folder}/help-{i}.wav', data, 8000, 'PCM_16')
+    
+  # words = ['น่ารัก', 'ฟุตบอล', 'ปวดหัว', 'พุทรา', 'รถไฟ', 'น้ำตก', 'เด็กชาย', 'รถยนต์', 'ดอกไม้', 'ยศศักดิ์', 'นกยูง', 'เอาใจ', 
+  # 'จอดป้าย', 'ช้อนส้อม', 'ลูกเต๋า', 'ยุแหย่', 'พี่น้อง', 'เล็กน้อย', 'ชกมวย', 'พระพุทธ', 'วุ่นวาย', 'ปกครอง', 'ฝนตก', 'นักเรียน', 'มดแดง', 
+  # 'งานบ้าน', 'เสื้อผ้า', 'พัดลม', 'เคราะห์ร้าย', 'พ่อแม่', 'ม้านั่ง', 'ไฟฟ้า', 'เท่ากัน', 'มะม่วง', 'นกแก้ว', 'กระต่าย']
+
+  # for i in range(1,37):
+  #   print(i, words[i-1])
+  #   task_q = Queue()
+  #   record_buffer = [-1 for _ in range(maximum_buffer)]
+  #   recorder = RecordAudio(8000, seconds=2)
+  #   recorder(task_q, record_buffer, terminate=True)
+    
+  #   while(not task_q.empty()):
+  #     task = task_q.get()
+  #     data = consume(record_buffer, task['index_start'], task['index_end'])
+  #     sf.write(f'{tgt_folder}/test-{i}.wav', data, 8000, 'PCM_16')
     
 

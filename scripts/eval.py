@@ -24,19 +24,22 @@ nfft=4096
 use_energy = False
 norm = 'cmnperspk'
 
-# for n_feats in [5,6,7,8,9,10,11,12,13]:
-for n_feats in [5, 13, 20]:
+for n_feats in [5,6,7,8,9,10,11,12,13, 20]:
+# for n_feats in [5, 9, 13, 20]:
 
-  # data_dir = '/Users/burin/workspace/hotword_data/data/test_8k'
+  # query_dir = '/Users/burin/workspace/hotword_data/data/test_8k'
   query_dir = '/Users/burin/workspace/hotword_data/tuning/help' 
-  references = "/Users/burin/workspace/hotword_data/Patient_Recordings_[20_Records]_8k"
+  references = []
+  references += ['/Users/burin/workspace/hotword_data/tuning/others'] 
+  # references += ["/Users/burin/workspace/hotword_data/Patient_Recordings_[20_Records]_8k"]
 
   spotter1 = HotWordSpotting(test_folder=references, 
       threshold=275, n_feats=n_feats, n_fft=nfft, hop_length=hop_length, win_length=win_length, norm=norm, use_energy=use_energy)    
 
 
-  #for spk in [f"spk{str(num).zfill(3)}" for num in range(99,120)]:
-  for spk in ['fair']:
+  # for spk in [f"spk{str(num).zfill(3)}" for num in range(99,120)]:
+  for spk in ['fair', 'hawan', 'mix', 'ta', 'krit', 'oong', 'top', 'ake']:
+
     if(not os.path.exists(f"{query_dir}/{spk}")):
       continue
 
